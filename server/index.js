@@ -1,6 +1,6 @@
 import express from 'express'
-import { mkdir, readdir, stat } from 'node:fs/promises'
-import { homedir } from 'node:os'
+import { mkdir, mkdtemp, readdir, rm, stat } from 'node:fs/promises'
+import { homedir, tmpdir } from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -168,6 +168,23 @@ async function recentDownloads() {
   }
 }
 
+async function listFiles(dir) {
+  const names = await readdir(dir)
+  const files = await Promise.all(
+    names.map(async (name) => {
+      const filePath = path.join(dir, name)
+      const info = await stat(filePath)
+      return info.isFile()
+        ? { name, path: filePath, size: info.size, modifiedAt: info.mtime.toISOString() }
+        : null
+    }),
+  )
+
+  return files
+    .filter(Boolean)
+    .sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt))
+}
+
 app.get('/api/health', async (_req, res) => {
   res.json({ ...(await getHealth()), recent: await recentDownloads() })
 })
@@ -252,6 +269,55 @@ app.post('/api/download', async (req, res) => {
   const beforeNames = new Set(before.map((file) => file.name))
   const created = after.find((file) => !beforeNames.has(file.name)) || after[0] || null
   res.json({ ok: true, file: created, recent: after })
+})
+
+app.post('/api/download-file', async (req, res) => {
+  const { url, type } = req.body || {}
+  if (!isYoutubeUrl(url)) {
+    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube URL.' } })
+    return
+  }
+  if (!['mp4', 'm4a'].includes(type)) {
+    res.status(400).json({ ok: false, error: { code: 'invalid_type', message: 'Choose MP4 or M4A.' } })
+    return
+  }
+
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'bluebull-'))
+  const output = path.join(tempDir, '%(title).120s [%(id)s].%(ext)s')
+  const args = [
+    '--no-playlist',
+    '--socket-timeout',
+    '30',
+    '--restrict-filenames',
+    '-o',
+    output,
+  ]
+
+  if (type === 'mp4') {
+    args.push('-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best', '--merge-output-format', 'mp4')
+  } else {
+    args.push('-f', 'ba[ext=m4a]/ba/best', '-x', '--audio-format', 'm4a')
+  }
+  args.push(url)
+
+  const result = await runCommand('yt-dlp', args, { timeoutMs: 10 * 60 * 1000 })
+
+  if (!result.ok) {
+    await rm(tempDir, { recursive: true, force: true })
+    res.status(422).json({ ok: false, error: classifyError(result.stderr || result.error?.message, 'Download failed.'), stderr: result.stderr })
+    return
+  }
+
+  const [file] = await listFiles(tempDir)
+  if (!file) {
+    await rm(tempDir, { recursive: true, force: true })
+    res.status(500).json({ ok: false, error: { code: 'missing_output', message: 'Download completed, but no output file was found.' } })
+    return
+  }
+
+  res.download(file.path, file.name, async () => {
+    await rm(tempDir, { recursive: true, force: true })
+  })
 })
 
 app.use(express.static(distDir))

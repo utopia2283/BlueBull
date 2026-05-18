@@ -37,6 +37,7 @@ function formatSize(bytes) {
 function App() {
   const [url, setUrl] = useState('')
   const [type, setType] = useState('mp4')
+  const [saveMode, setSaveMode] = useState('device')
   const [health, setHealth] = useState(null)
   const [video, setVideo] = useState(null)
   const [downloads, setDownloads] = useState([])
@@ -104,6 +105,51 @@ function App() {
     setLoading((current) => ({ ...current, download: true }))
     setError(emptyError)
     try {
+      if (saveMode === 'device') {
+        const response = await fetch('/api/download-file', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, type }),
+        })
+
+        if (!response.ok) {
+          const body = await response.json()
+          throw body.error || { code: 'download_error', message: 'Download failed.' }
+        }
+
+        const blob = await response.blob()
+        const disposition = response.headers.get('content-disposition') || ''
+        const fallbackName = `bluebull-download.${type}`
+        const fileName = decodeURIComponent(disposition.match(/filename="?([^"]+)"?/i)?.[1] || fallbackName)
+
+        if ('showSaveFilePicker' in window) {
+          const handle = await window.showSaveFilePicker({
+            suggestedName: fileName,
+            types: [
+              {
+                description: type.toUpperCase(),
+                accept: { [type === 'mp4' ? 'video/mp4' : 'audio/mp4']: [`.${type}`] },
+              },
+            ],
+          })
+          const writable = await handle.createWritable()
+          await writable.write(blob)
+          await writable.close()
+        } else {
+          const objectUrl = URL.createObjectURL(blob)
+          const link = document.createElement('a')
+          link.href = objectUrl
+          link.download = fileName
+          document.body.append(link)
+          link.click()
+          link.remove()
+          URL.revokeObjectURL(objectUrl)
+        }
+
+        setError({ code: 'download_complete', message: `Saved to this device: ${fileName}` })
+        return
+      }
+
       const result = await request('/api/download', {
         method: 'POST',
         body: JSON.stringify({ url, type }),
@@ -189,6 +235,15 @@ function App() {
               M4A
             </button>
           </div>
+
+          <div className="save-row" aria-label="Save location">
+            <button type="button" className={saveMode === 'device' ? 'selected' : ''} onClick={() => setSaveMode('device')}>
+              This device
+            </button>
+            <button type="button" className={saveMode === 'server' ? 'selected' : ''} onClick={() => setSaveMode('server')}>
+              BlueBull folder
+            </button>
+          </div>
         </form>
 
         {video && (
@@ -209,7 +264,7 @@ function App() {
         )}
 
         <button className="primary-action" type="button" onClick={download} disabled={!ready || !url.trim() || loading.download}>
-          {loading.download ? 'Downloading...' : `Download ${type.toUpperCase()}`}
+          {loading.download ? 'Downloading...' : saveMode === 'device' ? `Save ${type.toUpperCase()} to device` : `Save ${type.toUpperCase()} to BlueBull folder`}
         </button>
       </section>
 

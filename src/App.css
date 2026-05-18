@@ -158,17 +158,28 @@ input {
   font-weight: 700;
 }
 
-.format-row {
+.format-row,
+.save-row {
   width: fit-content;
   display: grid;
-  grid-template-columns: repeat(2, 92px);
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: var(--soft);
 }
 
-.format-row button {
+.format-row {
+  grid-template-columns: repeat(2, 92px);
+}
+
+.save-row {
+  grid-template-columns: repeat(2, minmax(132px, 1fr));
+  max-width: 420px;
+  width: 100%;
+}
+
+.format-row button,
+.save-row button {
   height: 38px;
   border-radius: 6px;
   background: transparent;
@@ -176,7 +187,8 @@ input {
   font-weight: 700;
 }
 
-.format-row .selected {
+.format-row .selected,
+.save-row .selected {
   background: var(--bg);
   color: var(--text);
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.14);
@@ -314,6 +326,11 @@ input {
 
   .url-row button {
     height: 46px;
+  }
+
+  .save-row {
+    grid-template-columns: 1fr;
+    max-width: none;
   }
 
   .video-result {
