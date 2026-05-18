@@ -25,14 +25,13 @@ function formatDuration(seconds) {
 function App() {
   const [url, setUrl] = useState('')
   const [type, setType] = useState('mp4')
-  const [directoryHandle, setDirectoryHandle] = useState(null)
   const [health, setHealth] = useState(null)
   const [video, setVideo] = useState(null)
   const [error, setError] = useState(emptyError)
   const [loading, setLoading] = useState({ health: true, info: false, download: false })
 
   const ready = health?.ready
-  const supportsFolderPicker = 'showDirectoryPicker' in window
+  const supportsSavePicker = 'showSaveFilePicker' in window
   const statusLabel = useMemo(() => {
     if (!health) return 'Checking'
     if (health.ready) return 'Ready'
@@ -88,27 +87,6 @@ function App() {
     }
   }
 
-  async function chooseFolder() {
-    setError(emptyError)
-    if (!supportsFolderPicker) {
-      setError({
-        code: 'browser_downloads',
-        message: 'This browser cannot choose a folder here. It will use the browser download prompt or default downloads folder.',
-      })
-      return
-    }
-
-    try {
-      const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
-      setDirectoryHandle(handle)
-      setError({ code: 'folder_selected', message: `Downloads will be saved to: ${handle.name}` })
-    } catch (nextError) {
-      if (nextError?.name !== 'AbortError') {
-        setError({ code: 'folder_error', message: 'Could not open the folder picker.' })
-      }
-    }
-  }
-
   async function download() {
     setLoading((current) => ({ ...current, download: true }))
     setError(emptyError)
@@ -129,12 +107,20 @@ function App() {
       const fallbackName = `bluebull-download.${type}`
       const fileName = decodeURIComponent(disposition.match(/filename="?([^"]+)"?/i)?.[1] || fallbackName)
 
-      if (supportsFolderPicker && directoryHandle) {
-        const handle = await directoryHandle.getFileHandle(fileName, { create: true })
+      if (supportsSavePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: fileName,
+          types: [
+            {
+              description: type.toUpperCase(),
+              accept: { [type === 'mp4' ? 'video/mp4' : 'audio/mp4']: [`.${type}`] },
+            },
+          ],
+        })
         const writable = await handle.createWritable()
         await writable.write(blob)
         await writable.close()
-        setError({ code: 'download_complete', message: `Saved to ${directoryHandle.name}: ${fileName}` })
+        setError({ code: 'download_complete', message: `Saved: ${fileName}` })
       } else {
         const objectUrl = URL.createObjectURL(blob)
         const link = document.createElement('a')
@@ -223,16 +209,11 @@ function App() {
             </button>
           </div>
 
-          <div className="folder-row">
-            <button type="button" onClick={chooseFolder}>
-              Choose folder
-            </button>
-            <span>
-              {supportsFolderPicker
-                ? directoryHandle?.name || 'No folder selected'
-                : 'Browser download settings will choose the folder'}
-            </span>
-          </div>
+          <p className="save-note">
+            {supportsSavePicker
+              ? 'When you save, choose Desktop or any folder in the file dialog.'
+              : 'Your browser will ask where to save, or use its default downloads folder.'}
+          </p>
         </form>
 
         {video && (
@@ -246,13 +227,13 @@ function App() {
         )}
 
         {error.message && (
-          <div className={error.code === 'download_complete' || error.code === 'folder_selected' ? 'message success' : 'message'}>
+          <div className={error.code === 'download_complete' ? 'message success' : 'message'}>
             <strong>{error.code || 'status'}</strong>
             <span>{error.message}</span>
           </div>
         )}
 
-        <button className="primary-action" type="button" onClick={download} disabled={!ready || !url.trim() || loading.download || (supportsFolderPicker && !directoryHandle)}>
+        <button className="primary-action" type="button" onClick={download} disabled={!ready || !url.trim() || loading.download}>
           {loading.download ? 'Downloading...' : `Save ${type.toUpperCase()}`}
         </button>
       </section>
@@ -279,8 +260,8 @@ function App() {
         <section>
           <h2>Save location</h2>
           <p className="muted">
-            {supportsFolderPicker
-              ? directoryHandle?.name || 'Choose a folder before downloading.'
+            {supportsSavePicker
+              ? 'The save dialog lets users choose Desktop or any folder for each file.'
               : 'Your browser will ask where to save, or use its default downloads folder.'}
           </p>
         </section>

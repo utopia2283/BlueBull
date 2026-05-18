@@ -185,25 +185,10 @@ input {
   box-shadow: 0 1px 4px rgba(15, 23, 42, 0.14);
 }
 
-.folder-row {
-  display: grid;
-  grid-template-columns: 150px minmax(0, 1fr);
-  gap: 10px;
-  align-items: center;
-}
-
-.folder-row button {
-  height: 42px;
-  border-radius: 8px;
-  background: var(--soft);
-  color: var(--text);
-  font-weight: 700;
-  border: 1px solid var(--line);
-}
-
-.folder-row span {
+.save-note {
   color: var(--muted);
-  overflow-wrap: anywhere;
+  font-size: 14px;
+  line-height: 1.45;
 }
 
 .video-result {
@@ -313,11 +298,6 @@ input {
 
   .url-row button {
     height: 46px;
-  }
-
-  .folder-row {
-    grid-template-columns: 1fr;
-    max-width: none;
   }
 
   .video-result {
