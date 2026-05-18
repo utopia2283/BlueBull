@@ -5,14 +5,14 @@ const emptyError = { code: '', message: '' }
 const previewHealth = {
   ready: false,
   status: 'deployed_preview',
-  downloadDir: 'Preview only. Open the local app on your Mac to download files.',
+  downloadDir: 'Preview only. Use the BlueBull tunnel URL to download files.',
   ytdlp: { ok: false, version: null, versionOk: false, previewOnly: true },
   ffmpeg: { ok: false, previewOnly: true },
   probe: { ok: false, previewOnly: true },
 }
 const previewError = {
   code: 'preview_only',
-  message: 'This Vercel page is only a preview. Use http://127.0.0.1:5174 on your Mac for yt-dlp downloads.',
+  message: 'This Vercel page is only a preview. Use the BlueBull tunnel URL for downloads.',
 }
 
 function formatDuration(seconds) {
@@ -22,29 +22,17 @@ function formatDuration(seconds) {
   return `${minutes}:${rest}`
 }
 
-function formatSize(bytes) {
-  if (!bytes) return ''
-  const units = ['B', 'KB', 'MB', 'GB']
-  let value = bytes
-  let unit = 0
-  while (value >= 1024 && unit < units.length - 1) {
-    value /= 1024
-    unit += 1
-  }
-  return `${value.toFixed(unit === 0 ? 0 : 1)} ${units[unit]}`
-}
-
 function App() {
   const [url, setUrl] = useState('')
   const [type, setType] = useState('mp4')
-  const [saveMode, setSaveMode] = useState('device')
+  const [directoryHandle, setDirectoryHandle] = useState(null)
   const [health, setHealth] = useState(null)
   const [video, setVideo] = useState(null)
-  const [downloads, setDownloads] = useState([])
   const [error, setError] = useState(emptyError)
   const [loading, setLoading] = useState({ health: true, info: false, download: false })
 
   const ready = health?.ready
+  const supportsFolderPicker = 'showDirectoryPicker' in window
   const statusLabel = useMemo(() => {
     if (!health) return 'Checking'
     if (health.ready) return 'Ready'
@@ -74,7 +62,6 @@ function App() {
     try {
       const result = await request('/api/health')
       setHealth(result)
-      setDownloads(result.recent || [])
     } catch {
       setHealth(previewHealth)
       setError(previewError)
@@ -101,62 +88,63 @@ function App() {
     }
   }
 
+  async function chooseFolder() {
+    setError(emptyError)
+    if (!supportsFolderPicker) {
+      setError({
+        code: 'browser_downloads',
+        message: 'This browser cannot choose a folder here. It will use the browser download prompt or default downloads folder.',
+      })
+      return
+    }
+
+    try {
+      const handle = await window.showDirectoryPicker({ mode: 'readwrite' })
+      setDirectoryHandle(handle)
+      setError({ code: 'folder_selected', message: `Downloads will be saved to: ${handle.name}` })
+    } catch (nextError) {
+      if (nextError?.name !== 'AbortError') {
+        setError({ code: 'folder_error', message: 'Could not open the folder picker.' })
+      }
+    }
+  }
+
   async function download() {
     setLoading((current) => ({ ...current, download: true }))
     setError(emptyError)
     try {
-      if (saveMode === 'device') {
-        const response = await fetch('/api/download-file', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ url, type }),
-        })
-
-        if (!response.ok) {
-          const body = await response.json()
-          throw body.error || { code: 'download_error', message: 'Download failed.' }
-        }
-
-        const blob = await response.blob()
-        const disposition = response.headers.get('content-disposition') || ''
-        const fallbackName = `bluebull-download.${type}`
-        const fileName = decodeURIComponent(disposition.match(/filename="?([^"]+)"?/i)?.[1] || fallbackName)
-
-        if ('showSaveFilePicker' in window) {
-          const handle = await window.showSaveFilePicker({
-            suggestedName: fileName,
-            types: [
-              {
-                description: type.toUpperCase(),
-                accept: { [type === 'mp4' ? 'video/mp4' : 'audio/mp4']: [`.${type}`] },
-              },
-            ],
-          })
-          const writable = await handle.createWritable()
-          await writable.write(blob)
-          await writable.close()
-        } else {
-          const objectUrl = URL.createObjectURL(blob)
-          const link = document.createElement('a')
-          link.href = objectUrl
-          link.download = fileName
-          document.body.append(link)
-          link.click()
-          link.remove()
-          URL.revokeObjectURL(objectUrl)
-        }
-
-        setError({ code: 'download_complete', message: `Saved to this device: ${fileName}` })
-        return
-      }
-
-      const result = await request('/api/download', {
+      const response = await fetch('/api/download-file', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, type }),
       })
-      setDownloads(result.recent || [])
-      if (result.file) {
-        setError({ code: 'download_complete', message: `Saved: ${result.file.name}` })
+
+      if (!response.ok) {
+        const body = await response.json()
+        throw body.error || { code: 'download_error', message: 'Download failed.' }
+      }
+
+      const blob = await response.blob()
+      const disposition = response.headers.get('content-disposition') || ''
+      const fallbackName = `bluebull-download.${type}`
+      const fileName = decodeURIComponent(disposition.match(/filename="?([^"]+)"?/i)?.[1] || fallbackName)
+
+      if (supportsFolderPicker && directoryHandle) {
+        const handle = await directoryHandle.getFileHandle(fileName, { create: true })
+        const writable = await handle.createWritable()
+        await writable.write(blob)
+        await writable.close()
+        setError({ code: 'download_complete', message: `Saved to ${directoryHandle.name}: ${fileName}` })
+      } else {
+        const objectUrl = URL.createObjectURL(blob)
+        const link = document.createElement('a')
+        link.href = objectUrl
+        link.download = fileName
+        document.body.append(link)
+        link.click()
+        link.remove()
+        URL.revokeObjectURL(objectUrl)
+        setError({ code: 'download_complete', message: `Sent to browser downloads: ${fileName}` })
       }
     } catch (nextError) {
       setError(nextError)
@@ -175,7 +163,6 @@ function App() {
         const result = await request('/api/health')
         if (!active) return
         setHealth(result)
-        setDownloads(result.recent || [])
       } catch {
         if (!active) return
         setHealth(previewHealth)
@@ -207,7 +194,7 @@ function App() {
         <div className={`status-strip ${ready ? 'ready' : 'degraded'}`}>
           <div>
             <strong>{statusLabel}</strong>
-            <span>{health?.downloadDir || '~/Desktop/BlueBull Downloads'}</span>
+            <span>{health?.downloadDir || 'Choose a folder on this device'}</span>
           </div>
           <small>{health?.status === 'deployed_preview' ? 'local runtime required' : `yt-dlp ${health?.ytdlp?.version || 'not found'}`}</small>
         </div>
@@ -236,13 +223,15 @@ function App() {
             </button>
           </div>
 
-          <div className="save-row" aria-label="Save location">
-            <button type="button" className={saveMode === 'device' ? 'selected' : ''} onClick={() => setSaveMode('device')}>
-              This device
+          <div className="folder-row">
+            <button type="button" onClick={chooseFolder}>
+              Choose folder
             </button>
-            <button type="button" className={saveMode === 'server' ? 'selected' : ''} onClick={() => setSaveMode('server')}>
-              BlueBull folder
-            </button>
+            <span>
+              {supportsFolderPicker
+                ? directoryHandle?.name || 'No folder selected'
+                : 'Browser download settings will choose the folder'}
+            </span>
           </div>
         </form>
 
@@ -257,14 +246,14 @@ function App() {
         )}
 
         {error.message && (
-          <div className={error.code === 'download_complete' ? 'message success' : 'message'}>
+          <div className={error.code === 'download_complete' || error.code === 'folder_selected' ? 'message success' : 'message'}>
             <strong>{error.code || 'status'}</strong>
             <span>{error.message}</span>
           </div>
         )}
 
-        <button className="primary-action" type="button" onClick={download} disabled={!ready || !url.trim() || loading.download}>
-          {loading.download ? 'Downloading...' : saveMode === 'device' ? `Save ${type.toUpperCase()} to device` : `Save ${type.toUpperCase()} to BlueBull folder`}
+        <button className="primary-action" type="button" onClick={download} disabled={!ready || !url.trim() || loading.download || (supportsFolderPicker && !directoryHandle)}>
+          {loading.download ? 'Downloading...' : `Save ${type.toUpperCase()}`}
         </button>
       </section>
 
@@ -288,16 +277,12 @@ function App() {
         </section>
 
         <section>
-          <h2>Recent downloads</h2>
-          <div className="download-list">
-            {downloads.length === 0 && <p className="muted">No files yet.</p>}
-            {downloads.map((file) => (
-              <div className="download-item" key={file.path}>
-                <span>{file.name}</span>
-                <small>{formatSize(file.size)}</small>
-              </div>
-            ))}
-          </div>
+          <h2>Save location</h2>
+          <p className="muted">
+            {supportsFolderPicker
+              ? directoryHandle?.name || 'Choose a folder before downloading.'
+              : 'Your browser will ask where to save, or use its default downloads folder.'}
+          </p>
         </section>
       </aside>
     </main>

@@ -16,11 +16,8 @@ npm install
 npm run dev
 ```
 
-Open the local URL printed by Vite. Downloads are saved to:
-
-```text
-~/Desktop/BlueBull Downloads
-```
+Open the local URL printed by Vite. Users choose their own download folder in
+the browser before saving a file.
 
 For a single-port server suitable for a tunnel:
 
