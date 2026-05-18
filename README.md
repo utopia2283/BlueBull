@@ -22,6 +22,13 @@ Open the local URL printed by Vite. Downloads are saved to:
 ~/Desktop/BlueBull Downloads
 ```
 
+For a single-port server suitable for a tunnel:
+
+```sh
+npm run build
+npm start
+```
+
 ## Vercel
 
 The Vercel deployment is a preview build of the interface. Actual downloads need

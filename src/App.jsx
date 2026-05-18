@@ -2,6 +2,18 @@ import { useEffect, useMemo, useState } from 'react'
 import './App.css'
 
 const emptyError = { code: '', message: '' }
+const previewHealth = {
+  ready: false,
+  status: 'deployed_preview',
+  downloadDir: 'Preview only. Open the local app on your Mac to download files.',
+  ytdlp: { ok: false, version: null, versionOk: false, previewOnly: true },
+  ffmpeg: { ok: false, previewOnly: true },
+  probe: { ok: false, previewOnly: true },
+}
+const previewError = {
+  code: 'preview_only',
+  message: 'This Vercel page is only a preview. Use http://127.0.0.1:5174 on your Mac for yt-dlp downloads.',
+}
 
 function formatDuration(seconds) {
   if (!seconds) return 'Unknown length'
@@ -35,6 +47,7 @@ function App() {
   const statusLabel = useMemo(() => {
     if (!health) return 'Checking'
     if (health.ready) return 'Ready'
+    if (health.status === 'deployed_preview') return 'Preview only'
     if (!health.ytdlp?.ok) return 'yt-dlp missing'
     if (!health.ytdlp?.versionOk) return 'yt-dlp outdated'
     if (!health.ffmpeg?.ok) return 'ffmpeg missing'
@@ -61,8 +74,9 @@ function App() {
       const result = await request('/api/health')
       setHealth(result)
       setDownloads(result.recent || [])
-    } catch (nextError) {
-      setError(nextError)
+    } catch {
+      setHealth(previewHealth)
+      setError(previewError)
     } finally {
       setLoading((current) => ({ ...current, health: false }))
     }
@@ -118,18 +132,8 @@ function App() {
         setDownloads(result.recent || [])
       } catch {
         if (!active) return
-        setHealth({
-          ready: false,
-          status: 'deployed_preview',
-          downloadDir: 'Run locally to download files',
-          ytdlp: { ok: false, version: null, versionOk: false },
-          ffmpeg: { ok: false },
-          probe: { ok: false },
-        })
-        setError({
-          code: 'local_api_unavailable',
-          message: 'BlueBull is deployed as a preview. Run it on your Mac to use yt-dlp downloads.',
-        })
+        setHealth(previewHealth)
+        setError(previewError)
       } finally {
         if (active) setLoading((current) => ({ ...current, health: false }))
       }
@@ -159,7 +163,7 @@ function App() {
             <strong>{statusLabel}</strong>
             <span>{health?.downloadDir || '~/Desktop/BlueBull Downloads'}</span>
           </div>
-          <small>yt-dlp {health?.ytdlp?.version || 'not found'}</small>
+          <small>{health?.status === 'deployed_preview' ? 'local runtime required' : `yt-dlp ${health?.ytdlp?.version || 'not found'}`}</small>
         </div>
 
         <form className="download-form" onSubmit={fetchInfo}>
@@ -215,15 +219,15 @@ function App() {
           <ul className="check-list">
             <li className={health?.ytdlp?.ok && health?.ytdlp?.versionOk ? 'pass' : 'fail'}>
               <span>yt-dlp</span>
-              <strong>{health?.ytdlp?.version || 'missing'}</strong>
+              <strong>{health?.ytdlp?.previewOnly ? 'local only' : health?.ytdlp?.version || 'missing'}</strong>
             </li>
             <li className={health?.ffmpeg?.ok ? 'pass' : 'fail'}>
               <span>ffmpeg</span>
-              <strong>{health?.ffmpeg?.ok ? 'found' : 'missing'}</strong>
+              <strong>{health?.ffmpeg?.previewOnly ? 'local only' : health?.ffmpeg?.ok ? 'found' : 'missing'}</strong>
             </li>
             <li className={health?.probe?.ok ? 'pass' : 'fail'}>
               <span>YouTube probe</span>
-              <strong>{health?.probe?.ok ? 'passed' : 'failed'}</strong>
+              <strong>{health?.probe?.previewOnly ? 'local only' : health?.probe?.ok ? 'passed' : 'failed'}</strong>
             </li>
           </ul>
         </section>

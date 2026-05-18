@@ -3,12 +3,15 @@ import { mkdir, readdir, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 
 const app = express()
 const port = Number(process.env.PORT || 4174)
 const downloadDir = process.env.DOWNLOAD_DIR || path.join(homedir(), 'Desktop', 'BlueBull Downloads')
 const probeUrl = process.env.YTDLP_PROBE_URL || 'https://www.youtube.com/watch?v=jNQXAC9IVRw'
 const minVersion = '2026.03.17'
+const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
+const distDir = path.join(rootDir, 'dist')
 
 app.use(express.json({ limit: '32kb' }))
 
@@ -249,6 +252,15 @@ app.post('/api/download', async (req, res) => {
   const beforeNames = new Set(before.map((file) => file.name))
   const created = after.find((file) => !beforeNames.has(file.name)) || after[0] || null
   res.json({ ok: true, file: created, recent: after })
+})
+
+app.use(express.static(distDir))
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api/')) {
+    next()
+    return
+  }
+  res.sendFile(path.join(distDir, 'index.html'))
 })
 
 app.listen(port, '127.0.0.1', () => {
