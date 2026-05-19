@@ -48,7 +48,7 @@ function App() {
     if (!health.ytdlp?.ok) return 'yt-dlp missing'
     if (!health.ytdlp?.versionOk) return 'yt-dlp outdated'
     if (!health.ffmpeg?.ok) return 'ffmpeg missing'
-    if (!health.probe?.ok) return 'YouTube probe failed'
+    if (!health.probe?.ok) return 'Extractor probe failed'
     return 'Degraded'
   }, [health])
 
@@ -109,7 +109,7 @@ function App() {
       if (!nextUrl.trim()) {
         setError({
           code: 'clipboard_blocked',
-          message: 'Paste permission was blocked. Paste the YouTube URL into the input, then try again.',
+          message: 'Paste permission was blocked. Paste the video URL into the input, then try again.',
         })
         return
       }
@@ -223,7 +223,7 @@ function App() {
         <div className="panel-header">
           <div>
             <p className="eyebrow">BlueBull</p>
-            <h1>Save YouTube video or audio</h1>
+            <h1>Save videos from YouTube, Facebook, or Instagram</h1>
           </div>
           <button className="icon-button" type="button" onClick={refreshHealth} disabled={loading.health} title="Refresh status">
             ↻
@@ -239,13 +239,13 @@ function App() {
         </div>
 
         <form className="download-form" onSubmit={pasteAndCheck}>
-          <label htmlFor="url">YouTube URL</label>
+          <label htmlFor="url">Video URL</label>
           <div className="url-row">
             <input
               id="url"
               value={url}
               onChange={(event) => setUrl(event.target.value)}
-              placeholder="https://www.youtube.com/watch?v=..."
+              placeholder="Paste YouTube, Facebook, or Instagram URL"
               autoComplete="off"
             />
             <button type="submit" disabled={loading.info}>
@@ -315,7 +315,7 @@ function App() {
               <strong>{health?.ffmpeg?.previewOnly ? 'local only' : health?.ffmpeg?.ok ? 'found' : 'missing'}</strong>
             </li>
             <li className={health?.probe?.ok ? 'pass' : 'fail'}>
-              <span>YouTube probe</span>
+              <span>Extractor probe</span>
               <strong>{health?.probe?.previewOnly ? 'local only' : health?.probe?.ok ? 'passed' : 'failed'}</strong>
             </li>
           </ul>

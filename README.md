@@ -1,7 +1,8 @@
 # BlueBull
 
-BlueBull is a local-only YouTube video/audio downloader with a React interface
-and an Express backend powered by `yt-dlp`.
+BlueBull is a local video/audio downloader for public YouTube, Facebook, and
+Instagram URLs, with a React interface and an Express backend powered by
+`yt-dlp`.
 
 ## Requirements
 

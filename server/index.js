@@ -61,11 +61,21 @@ function compareVersions(current, minimum) {
   return 0
 }
 
-function isYoutubeUrl(value) {
+function isSupportedUrl(value) {
   try {
     const parsed = new URL(value)
     const host = parsed.hostname.replace(/^www\./, '')
-    return ['youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'].includes(host)
+    return [
+      'youtube.com',
+      'm.youtube.com',
+      'music.youtube.com',
+      'youtu.be',
+      'facebook.com',
+      'm.facebook.com',
+      'fb.watch',
+      'instagram.com',
+      'm.instagram.com',
+    ].includes(host)
   } catch {
     return false
   }
@@ -79,13 +89,13 @@ function classifyError(stderr = '', fallback = 'Request failed') {
     return { code: 'missing_dependency', message: 'yt-dlp is not installed or not on PATH.' }
   }
   if (lower.includes('sign in to confirm') || lower.includes('login') || lower.includes('cookies')) {
-    return { code: 'requires_login', message: 'YouTube requires sign-in or cookies for this video.' }
+    return { code: 'requires_login', message: 'This post requires sign-in or cookies. BlueBull only supports public content.' }
   }
   if (lower.includes('video unavailable') || lower.includes('private video')) {
-    return { code: 'video_unavailable', message: 'This video is unavailable.' }
+    return { code: 'video_unavailable', message: 'This video or post is unavailable.' }
   }
   if (lower.includes('nsig') || lower.includes('signature') || lower.includes('403')) {
-    return { code: 'extractor_degraded', message: 'YouTube extraction failed. yt-dlp may need an update.' }
+    return { code: 'extractor_degraded', message: 'Extraction failed. yt-dlp may need an update, or the post may not be public.' }
   }
   if (lower.includes('requested format is not available')) {
     return { code: 'format_unavailable', message: 'The requested format is not available for this video.' }
@@ -128,7 +138,7 @@ async function getHealth() {
         probe = { ok: false, error: { code: 'invalid_probe_output', message: 'yt-dlp returned invalid JSON.' } }
       }
     } else {
-      probe = { ok: false, error: classifyError(probeResult.stderr, 'YouTube probe failed.'), url: probeUrl }
+      probe = { ok: false, error: classifyError(probeResult.stderr, 'Extractor probe failed.'), url: probeUrl }
     }
   }
 
@@ -282,8 +292,8 @@ app.get('/api/health', async (_req, res) => {
 
 app.post('/api/info', async (req, res) => {
   const { url } = req.body || {}
-  if (!isYoutubeUrl(url)) {
-    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube URL.' } })
+  if (!isSupportedUrl(url)) {
+    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube, Facebook, or Instagram URL.' } })
     return
   }
 
@@ -321,8 +331,8 @@ app.post('/api/info', async (req, res) => {
 
 app.post('/api/download-file', async (req, res) => {
   const { url, type } = req.body || {}
-  if (!isYoutubeUrl(url)) {
-    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube URL.' } })
+  if (!isSupportedUrl(url)) {
+    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube, Facebook, or Instagram URL.' } })
     return
   }
   if (!['mp4', 'm4a'].includes(type)) {
@@ -370,8 +380,8 @@ app.post('/api/download-file', async (req, res) => {
 
 app.post('/api/download-job', async (req, res) => {
   const { url, type } = req.body || {}
-  if (!isYoutubeUrl(url)) {
-    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube URL.' } })
+  if (!isSupportedUrl(url)) {
+    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube, Facebook, or Instagram URL.' } })
     return
   }
   if (!['mp4', 'm4a'].includes(type)) {
