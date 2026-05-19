@@ -33,12 +33,20 @@
 }
 
 .eyebrow {
-  margin: 0 0 12px;
+  margin: 0 0 6px;
   color: var(--text);
   font-size: 28px;
   line-height: 1;
   font-weight: 820;
   text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.byline {
+  margin: 0 0 14px;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 700;
   letter-spacing: 0;
 }
 

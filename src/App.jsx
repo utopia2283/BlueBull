@@ -5,14 +5,14 @@ const emptyError = { code: '', message: '' }
 const previewHealth = {
   ready: false,
   status: 'deployed_preview',
-  downloadDir: 'Preview only. Use the BlueBull tunnel URL to download files.',
+  downloadDir: 'Preview only. Use the MatchGrab tunnel URL to download files.',
   ytdlp: { ok: false, version: null, versionOk: false, previewOnly: true },
   ffmpeg: { ok: false, previewOnly: true },
   probe: { ok: false, previewOnly: true },
 }
 const previewError = {
   code: 'preview_only',
-  message: 'This Vercel page is only a preview. Use the BlueBull tunnel URL for downloads.',
+  message: 'This Vercel page is only a preview. Use the MatchGrab tunnel URL for downloads.',
 }
 
 function formatDuration(seconds) {
@@ -23,11 +23,11 @@ function formatDuration(seconds) {
 }
 
 function safeFileStem(value) {
-  return (value || 'bluebull-download')
+  return (value || 'matchgrab-download')
     .replace(/[\\/:*?"<>|]+/g, '_')
     .replace(/\s+/g, ' ')
     .trim()
-    .slice(0, 120) || 'bluebull-download'
+    .slice(0, 120) || 'matchgrab-download'
 }
 
 function App() {
@@ -189,7 +189,7 @@ function App() {
 
       const blob = await response.blob()
       const disposition = response.headers.get('content-disposition') || ''
-      const fallbackName = `bluebull-download.${type}`
+      const fallbackName = `matchgrab-download.${type}`
       const fileName = decodeURIComponent(disposition.match(/filename="?([^"]+)"?/i)?.[1] || fallbackName)
 
       if (saveHandle) {
@@ -246,7 +246,8 @@ function App() {
       <section className="tool-panel">
         <div className="panel-header">
           <div>
-            <p className="eyebrow">BlueBull</p>
+            <p className="eyebrow">MatchGrab</p>
+            <p className="byline">Tool by Match</p>
             <h1>Save videos from YouTube, Facebook, or Instagram</h1>
           </div>
           <button className="icon-button" type="button" onClick={refreshHealth} disabled={loading.health} title="Refresh status">

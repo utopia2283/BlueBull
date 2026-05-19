@@ -91,7 +91,7 @@ function classifyError(stderr = '', fallback = 'Request failed') {
     return { code: 'missing_dependency', message: 'yt-dlp is not installed or not on PATH.' }
   }
   if (lower.includes('sign in to confirm') || lower.includes('login') || lower.includes('cookies')) {
-    return { code: 'requires_login', message: 'This post requires sign-in or cookies. BlueBull only supports public content.' }
+    return { code: 'requires_login', message: 'This post requires sign-in or cookies. MatchGrab only supports public content.' }
   }
   if (lower.includes('video unavailable') || lower.includes('private video')) {
     return { code: 'video_unavailable', message: 'This video or post is unavailable.' }
@@ -256,7 +256,7 @@ function updateProgress(job, chunk) {
 
 async function startDownloadJob({ url, type }) {
   const id = randomUUID()
-  const tempDir = await mkdtemp(path.join(tmpdir(), 'bluebull-'))
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'matchgrab-'))
   const output = path.join(tempDir, '%(title).120s [%(id)s].%(ext)s')
   const job = {
     id,
@@ -406,7 +406,7 @@ app.post('/api/download-file', async (req, res) => {
     return
   }
 
-  const tempDir = await mkdtemp(path.join(tmpdir(), 'bluebull-'))
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'matchgrab-'))
   const output = path.join(tempDir, '%(title).120s [%(id)s].%(ext)s')
   const args = [
     '--no-playlist',
