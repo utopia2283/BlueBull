@@ -22,6 +22,14 @@ function formatDuration(seconds) {
   return `${minutes}:${rest}`
 }
 
+function safeFileStem(value) {
+  return (value || 'bluebull-download')
+    .replace(/[\\/:*?"<>|]+/g, '_')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 120) || 'bluebull-download'
+}
+
 function App() {
   const [url, setUrl] = useState('')
   const [type, setType] = useState('mp4')
@@ -69,15 +77,14 @@ function App() {
     }
   }
 
-  async function fetchInfo(event) {
-    event.preventDefault()
+  async function fetchInfo(nextUrl = url) {
     setLoading((current) => ({ ...current, info: true }))
     setError(emptyError)
     setVideo(null)
     try {
       const result = await request('/api/info', {
         method: 'POST',
-        body: JSON.stringify({ url }),
+        body: JSON.stringify({ url: nextUrl }),
       })
       setVideo(result.video)
     } catch (nextError) {
@@ -87,10 +94,46 @@ function App() {
     }
   }
 
+  async function pasteAndCheck(event) {
+    event.preventDefault()
+    let nextUrl = url
+
+    try {
+      const clipboardText = await navigator.clipboard.readText()
+      if (clipboardText.trim()) {
+        nextUrl = clipboardText.trim()
+        setUrl(nextUrl)
+      }
+    } catch {
+      if (!nextUrl.trim()) {
+        setError({
+          code: 'clipboard_blocked',
+          message: 'Paste permission was blocked. Paste the YouTube URL into the input, then try again.',
+        })
+        return
+      }
+    }
+
+    await fetchInfo(nextUrl)
+  }
+
   async function download() {
     setLoading((current) => ({ ...current, download: true }))
     setError(emptyError)
+    let saveHandle = null
     try {
+      if (supportsSavePicker) {
+        saveHandle = await window.showSaveFilePicker({
+          suggestedName: `${safeFileStem(video?.title)}.${type}`,
+          types: [
+            {
+              description: type.toUpperCase(),
+              accept: { [type === 'mp4' ? 'video/mp4' : 'audio/mp4']: [`.${type}`] },
+            },
+          ],
+        })
+      }
+
       const response = await fetch('/api/download-file', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -107,20 +150,11 @@ function App() {
       const fallbackName = `bluebull-download.${type}`
       const fileName = decodeURIComponent(disposition.match(/filename="?([^"]+)"?/i)?.[1] || fallbackName)
 
-      if (supportsSavePicker) {
-        const handle = await window.showSaveFilePicker({
-          suggestedName: fileName,
-          types: [
-            {
-              description: type.toUpperCase(),
-              accept: { [type === 'mp4' ? 'video/mp4' : 'audio/mp4']: [`.${type}`] },
-            },
-          ],
-        })
-        const writable = await handle.createWritable()
+      if (saveHandle) {
+        const writable = await saveHandle.createWritable()
         await writable.write(blob)
         await writable.close()
-        setError({ code: 'download_complete', message: `Saved: ${fileName}` })
+        setError({ code: 'download_complete', message: `Saved: ${saveHandle.name || fileName}` })
       } else {
         const objectUrl = URL.createObjectURL(blob)
         const link = document.createElement('a')
@@ -185,7 +219,7 @@ function App() {
           <small>{health?.status === 'deployed_preview' ? 'local runtime required' : `yt-dlp ${health?.ytdlp?.version || 'not found'}`}</small>
         </div>
 
-        <form className="download-form" onSubmit={fetchInfo}>
+        <form className="download-form" onSubmit={pasteAndCheck}>
           <label htmlFor="url">YouTube URL</label>
           <div className="url-row">
             <input
@@ -195,8 +229,8 @@ function App() {
               placeholder="https://www.youtube.com/watch?v=..."
               autoComplete="off"
             />
-            <button type="submit" disabled={loading.info || !url.trim()}>
-              {loading.info ? 'Checking' : 'Check'}
+            <button type="submit" disabled={loading.info}>
+              {loading.info ? 'Checking' : 'Paste & Check'}
             </button>
           </div>
 
