@@ -33,10 +33,11 @@
 }
 
 .eyebrow {
-  margin: 0 0 8px;
-  color: var(--muted);
-  font-size: 13px;
-  font-weight: 700;
+  margin: 0 0 12px;
+  color: var(--text);
+  font-size: 28px;
+  line-height: 1;
+  font-weight: 820;
   text-transform: uppercase;
   letter-spacing: 0;
 }
@@ -228,6 +229,32 @@ input {
   border-color: #bbf7d0;
   background: #f0fdf4;
   color: #14532d;
+}
+
+.progress-panel {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.progress-panel div {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: var(--text);
+}
+
+.progress-panel progress {
+  width: 100%;
+  height: 12px;
+  accent-color: #1d4ed8;
+}
+
+.progress-panel small {
+  color: var(--muted);
 }
 
 .primary-action {

@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { randomUUID } from 'node:crypto'
 
 const app = express()
 const port = Number(process.env.PORT || 4174)
@@ -11,6 +12,7 @@ const probeUrl = process.env.YTDLP_PROBE_URL || 'https://www.youtube.com/watch?v
 const minVersion = '2026.03.17'
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const distDir = path.join(rootDir, 'dist')
+const jobs = new Map()
 
 app.use(express.json({ limit: '32kb' }))
 
@@ -161,6 +163,119 @@ async function listFiles(dir) {
     .sort((a, b) => new Date(b.modifiedAt) - new Date(a.modifiedAt))
 }
 
+function buildDownloadArgs({ url, type, output }) {
+  const args = [
+    '--newline',
+    '--no-playlist',
+    '--socket-timeout',
+    '30',
+    '--restrict-filenames',
+    '-o',
+    output,
+  ]
+
+  if (type === 'mp4') {
+    args.push('-f', 'bv*[ext=mp4]+ba[ext=m4a]/b[ext=mp4]/best', '--merge-output-format', 'mp4')
+  } else {
+    args.push('-f', 'ba[ext=m4a]/ba/best', '-x', '--audio-format', 'm4a')
+  }
+  args.push(url)
+  return args
+}
+
+function updateProgress(job, chunk) {
+  const text = chunk.toString()
+  job.log = `${job.log}${text}`.slice(-5000)
+
+  for (const line of text.split(/\r?\n/)) {
+    const percent = line.match(/\[download]\s+(\d+(?:\.\d+)?)%/)
+    if (percent) {
+      job.phase = 'downloading'
+      job.progress = Math.max(job.progress, Math.min(99, Number(percent[1])))
+    }
+    const eta = line.match(/ETA\s+([^\s]+)/)
+    if (eta) job.eta = eta[1]
+    if (line.includes('[Merger]') || line.includes('[ExtractAudio]') || line.includes('Deleting original file')) {
+      job.phase = 'finalizing'
+      job.progress = Math.max(job.progress, 96)
+    }
+  }
+}
+
+async function startDownloadJob({ url, type }) {
+  const id = randomUUID()
+  const tempDir = await mkdtemp(path.join(tmpdir(), 'bluebull-'))
+  const output = path.join(tempDir, '%(title).120s [%(id)s].%(ext)s')
+  const job = {
+    id,
+    type,
+    tempDir,
+    status: 'running',
+    phase: 'preparing',
+    progress: 1,
+    eta: null,
+    file: null,
+    error: null,
+    log: '',
+    createdAt: new Date().toISOString(),
+  }
+
+  jobs.set(id, job)
+  const child = spawn('yt-dlp', buildDownloadArgs({ url, type, output }), { shell: false })
+  job.child = child
+
+  child.stdout.on('data', (chunk) => updateProgress(job, chunk))
+  child.stderr.on('data', (chunk) => updateProgress(job, chunk))
+  child.on('error', async (error) => {
+    job.status = 'error'
+    job.error = classifyError(error.message, 'Download failed.')
+    await rm(tempDir, { recursive: true, force: true })
+  })
+  child.on('close', async (code) => {
+    if (job.status === 'error') return
+    if (code !== 0) {
+      job.status = 'error'
+      job.error = classifyError(job.log, 'Download failed.')
+      await rm(tempDir, { recursive: true, force: true })
+      return
+    }
+
+    const [file] = await listFiles(tempDir)
+    if (!file) {
+      job.status = 'error'
+      job.error = { code: 'missing_output', message: 'Download completed, but no output file was found.' }
+      await rm(tempDir, { recursive: true, force: true })
+      return
+    }
+
+    job.status = 'complete'
+    job.phase = 'complete'
+    job.progress = 100
+    job.file = file
+  })
+
+  setTimeout(async () => {
+    const current = jobs.get(id)
+    if (!current || current.status === 'running') return
+    if (current.tempDir) await rm(current.tempDir, { recursive: true, force: true })
+    jobs.delete(id)
+  }, 30 * 60 * 1000).unref()
+
+  return job
+}
+
+function publicJob(job) {
+  return {
+    id: job.id,
+    status: job.status,
+    phase: job.phase,
+    progress: job.progress,
+    eta: job.eta,
+    file: job.file ? { name: job.file.name, size: job.file.size } : null,
+    error: job.error,
+  }
+}
+
 app.get('/api/health', async (_req, res) => {
   res.json(await getHealth())
 })
@@ -250,6 +365,43 @@ app.post('/api/download-file', async (req, res) => {
 
   res.download(file.path, file.name, async () => {
     await rm(tempDir, { recursive: true, force: true })
+  })
+})
+
+app.post('/api/download-job', async (req, res) => {
+  const { url, type } = req.body || {}
+  if (!isYoutubeUrl(url)) {
+    res.status(400).json({ ok: false, error: { code: 'invalid_url', message: 'Enter a valid YouTube URL.' } })
+    return
+  }
+  if (!['mp4', 'm4a'].includes(type)) {
+    res.status(400).json({ ok: false, error: { code: 'invalid_type', message: 'Choose MP4 or M4A.' } })
+    return
+  }
+
+  const job = await startDownloadJob({ url, type })
+  res.json({ ok: true, job: publicJob(job) })
+})
+
+app.get('/api/download-job/:id', (req, res) => {
+  const job = jobs.get(req.params.id)
+  if (!job) {
+    res.status(404).json({ ok: false, error: { code: 'job_not_found', message: 'Download job not found.' } })
+    return
+  }
+  res.json({ ok: true, job: publicJob(job) })
+})
+
+app.get('/api/download-job/:id/file', (req, res) => {
+  const job = jobs.get(req.params.id)
+  if (!job || job.status !== 'complete' || !job.file) {
+    res.status(404).json({ ok: false, error: { code: 'file_not_ready', message: 'Download file is not ready.' } })
+    return
+  }
+
+  res.download(job.file.path, job.file.name, async () => {
+    await rm(job.tempDir, { recursive: true, force: true })
+    jobs.delete(job.id)
   })
 })
 

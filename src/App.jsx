@@ -36,6 +36,7 @@ function App() {
   const [health, setHealth] = useState(null)
   const [video, setVideo] = useState(null)
   const [error, setError] = useState(emptyError)
+  const [downloadProgress, setDownloadProgress] = useState(null)
   const [loading, setLoading] = useState({ health: true, info: false, download: false })
 
   const ready = health?.ready
@@ -120,6 +121,7 @@ function App() {
   async function download() {
     setLoading((current) => ({ ...current, download: true }))
     setError(emptyError)
+    setDownloadProgress({ phase: 'selecting location', progress: 0, eta: null })
     let saveHandle = null
     try {
       if (supportsSavePicker) {
@@ -134,15 +136,31 @@ function App() {
         })
       }
 
-      const response = await fetch('/api/download-file', {
+      setDownloadProgress({ phase: 'starting', progress: 1, eta: null })
+      const start = await request('/api/download-job', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url, type }),
       })
 
+      let job = start.job
+      setDownloadProgress(job)
+
+      while (job.status === 'running') {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        const status = await request(`/api/download-job/${job.id}`)
+        job = status.job
+        setDownloadProgress(job)
+      }
+
+      if (job.status === 'error') {
+        throw job.error || { code: 'download_error', message: 'Download failed.' }
+      }
+
+      setDownloadProgress({ ...job, phase: 'saving file', progress: 100 })
+      const response = await fetch(`/api/download-job/${job.id}/file`)
       if (!response.ok) {
         const body = await response.json()
-        throw body.error || { code: 'download_error', message: 'Download failed.' }
+        throw body.error || { code: 'download_error', message: 'Could not retrieve the completed file.' }
       }
 
       const blob = await response.blob()
@@ -168,6 +186,7 @@ function App() {
       }
     } catch (nextError) {
       setError(nextError)
+      setDownloadProgress(null)
     } finally {
       setLoading((current) => ({ ...current, download: false }))
     }
@@ -264,6 +283,17 @@ function App() {
           <div className={error.code === 'download_complete' ? 'message success' : 'message'}>
             <strong>{error.code || 'status'}</strong>
             <span>{error.message}</span>
+          </div>
+        )}
+
+        {downloadProgress && (
+          <div className="progress-panel">
+            <div>
+              <strong>{downloadProgress.phase || downloadProgress.status}</strong>
+              <span>{Math.round(downloadProgress.progress || 0)}%</span>
+            </div>
+            <progress max="100" value={downloadProgress.progress || 0}></progress>
+            {downloadProgress.eta && <small>ETA {downloadProgress.eta}</small>}
           </div>
         )}
 
