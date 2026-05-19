@@ -37,7 +37,7 @@ function App() {
   const [video, setVideo] = useState(null)
   const [error, setError] = useState(emptyError)
   const [downloadProgress, setDownloadProgress] = useState(null)
-  const [loading, setLoading] = useState({ health: true, info: false, download: false })
+  const [loading, setLoading] = useState({ health: true, info: false, download: false, update: false })
 
   const ready = health?.ready
   const supportsSavePicker = 'showSaveFilePicker' in window
@@ -75,6 +75,30 @@ function App() {
       setError(previewError)
     } finally {
       setLoading((current) => ({ ...current, health: false }))
+    }
+  }
+
+  async function updateYtdlp() {
+    setLoading((current) => ({ ...current, update: true }))
+    setError(emptyError)
+    try {
+      const result = await request('/api/update-ytdlp', { method: 'POST' })
+      setHealth((current) => ({
+        ...current,
+        ytdlp: {
+          ...(current?.ytdlp || {}),
+          version: result.update.currentVersion,
+          latestVersion: result.update.latestVersion,
+          updateAvailable: result.update.updateAvailable,
+          updating: false,
+        },
+      }))
+      setError({ code: 'yt_dlp_updated', message: `yt-dlp is now ${result.update.currentVersion}.` })
+      await refreshHealth()
+    } catch (nextError) {
+      setError(nextError)
+    } finally {
+      setLoading((current) => ({ ...current, update: false }))
     }
   }
 
@@ -310,6 +334,10 @@ function App() {
               <span>yt-dlp</span>
               <strong>{health?.ytdlp?.previewOnly ? 'local only' : health?.ytdlp?.version || 'missing'}</strong>
             </li>
+            <li className={health?.ytdlp?.updateAvailable ? 'fail' : 'pass'}>
+              <span>Latest yt-dlp</span>
+              <strong>{health?.ytdlp?.latestVersion || 'checking'}</strong>
+            </li>
             <li className={health?.ffmpeg?.ok ? 'pass' : 'fail'}>
               <span>ffmpeg</span>
               <strong>{health?.ffmpeg?.previewOnly ? 'local only' : health?.ffmpeg?.ok ? 'found' : 'missing'}</strong>
@@ -319,6 +347,14 @@ function App() {
               <strong>{health?.probe?.previewOnly ? 'local only' : health?.probe?.ok ? 'passed' : 'failed'}</strong>
             </li>
           </ul>
+          <button
+            className="secondary-action"
+            type="button"
+            onClick={updateYtdlp}
+            disabled={!health?.ytdlp?.ok || loading.update || health?.ytdlp?.previewOnly}
+          >
+            {loading.update ? 'Updating yt-dlp...' : health?.ytdlp?.updateAvailable ? 'Update yt-dlp' : 'Check / update yt-dlp'}
+          </button>
         </section>
 
         <section>

@@ -263,6 +263,17 @@ input {
   font-size: 16px;
 }
 
+.secondary-action {
+  width: 100%;
+  min-height: 42px;
+  margin-top: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--soft);
+  color: var(--text);
+  font-weight: 700;
+}
+
 .check-list {
   list-style: none;
   padding: 0;

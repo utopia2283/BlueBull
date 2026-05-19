@@ -13,6 +13,8 @@ const minVersion = '2026.03.17'
 const rootDir = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const distDir = path.join(rootDir, 'dist')
 const jobs = new Map()
+let cachedUpdateStatus = null
+let updateInProgress = false
 
 app.use(express.json({ limit: '32kb' }))
 
@@ -115,9 +117,40 @@ async function commandStatus(command, args) {
   return { ok: true, value: result.stdout.trim().split('\n')[0] }
 }
 
+function parseLatestYtdlpVersion(output) {
+  const match = output.match(/yt-dlp\s+\(([^)]+)\)/)
+  return match?.[1]?.replaceAll('-', '.') || null
+}
+
+async function getYtdlpUpdateStatus({ force = false } = {}) {
+  if (!force && cachedUpdateStatus && Date.now() - cachedUpdateStatus.checkedAtMs < 30 * 60 * 1000) {
+    return cachedUpdateStatus
+  }
+
+  const current = await commandStatus('yt-dlp', ['--version'])
+  const latestResult = await runCommand('python3', ['-m', 'pip', 'index', 'versions', 'yt-dlp'], { timeoutMs: 30000 })
+  const latest = latestResult.ok ? parseLatestYtdlpVersion(latestResult.stdout) : null
+  const currentVersion = current.ok ? current.value : null
+  const updateAvailable = Boolean(currentVersion && latest && compareVersions(currentVersion, latest) < 0)
+
+  cachedUpdateStatus = {
+    ok: current.ok,
+    currentVersion,
+    latestVersion: latest,
+    updateAvailable,
+    updating: updateInProgress,
+    checkedAt: new Date().toISOString(),
+    checkedAtMs: Date.now(),
+    error: current.error || (latestResult.ok ? null : classifyError(latestResult.stderr, 'Could not check latest yt-dlp version.')),
+  }
+
+  return cachedUpdateStatus
+}
+
 async function getHealth() {
   const ytdlp = await commandStatus('yt-dlp', ['--version'])
   const ffmpeg = await commandStatus('ffmpeg', ['-version'])
+  const updateStatus = await getYtdlpUpdateStatus()
   let probe = { ok: false, skipped: true, error: { code: 'missing_dependency', message: 'yt-dlp is unavailable.' } }
 
   if (ytdlp.ok) {
@@ -150,7 +183,16 @@ async function getHealth() {
     ready,
     status: ready ? 'ready' : 'degraded',
     downloadDir: 'User-selected folder',
-    ytdlp: { ok: ytdlp.ok, version: currentVersion, minVersion, versionOk, error: ytdlp.error },
+    ytdlp: {
+      ok: ytdlp.ok,
+      version: currentVersion,
+      minVersion,
+      versionOk,
+      latestVersion: updateStatus.latestVersion,
+      updateAvailable: updateStatus.updateAvailable,
+      updating: updateStatus.updating,
+      error: ytdlp.error || updateStatus.error,
+    },
     ffmpeg: { ok: ffmpeg.ok, version: ffmpeg.value, error: ffmpeg.error },
     probe,
   }
@@ -288,6 +330,30 @@ function publicJob(job) {
 
 app.get('/api/health', async (_req, res) => {
   res.json(await getHealth())
+})
+
+app.get('/api/update-status', async (_req, res) => {
+  res.json({ ok: true, update: await getYtdlpUpdateStatus({ force: true }) })
+})
+
+app.post('/api/update-ytdlp', async (_req, res) => {
+  if (updateInProgress) {
+    res.status(409).json({ ok: false, error: { code: 'update_in_progress', message: 'yt-dlp update is already running.' } })
+    return
+  }
+
+  updateInProgress = true
+  cachedUpdateStatus = { ...(cachedUpdateStatus || {}), updating: true, checkedAtMs: 0 }
+  const result = await runCommand('brew', ['upgrade', 'yt-dlp'], { timeoutMs: 10 * 60 * 1000 })
+  updateInProgress = false
+  cachedUpdateStatus = null
+
+  if (!result.ok && !result.stderr.includes('already installed')) {
+    res.status(500).json({ ok: false, error: classifyError(result.stderr, 'yt-dlp update failed.'), stderr: result.stderr })
+    return
+  }
+
+  res.json({ ok: true, output: `${result.stdout}\n${result.stderr}`.trim(), update: await getYtdlpUpdateStatus({ force: true }) })
 })
 
 app.post('/api/info', async (req, res) => {
