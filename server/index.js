@@ -490,7 +490,7 @@ app.use((req, res, next) => {
   res.sendFile(path.join(distDir, 'index.html'))
 })
 
-app.listen(port, '127.0.0.1', () => {
-  console.log(`YouTube downloader API listening on http://127.0.0.1:${port}`)
+app.listen(port, '0.0.0.0', () => {
+  console.log(`YouTube downloader API listening on http://0.0.0.0:${port}`)
   console.log('Downloads: user-selected browser folder')
 })
